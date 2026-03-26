@@ -1,0 +1,244 @@
+/* ========================================
+   Artisan Jewelry by Megha - Company Website Styles
+   Handmade Jewelry & Accessories
+   Color Palette: Wine, Rose Gold, Cream
+   ======================================== */
+
+/* CSS Reset & Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Cormorant Garamond', 'Georgia', serif;
+    line-height: 1.6;
+    color: #3d3535;
+    background: linear-gradient(180deg, #fdf8f3 0%, #f5ebe0 100%);
+}
+
+/* Container */
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Header & Navigation */
+header {
+    background: linear-gradient(135deg, #5c2e42 0%, #7d3c5c 50%, #5c2e42 100%);
+    color: #fff;
+    padding: 1rem 0;
+    box-shadow: 0 4px 20px rgba(92, 46, 66, 0.3);
+}
+
+header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.logo {
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: #f8efe8;
+    letter-spacing: 0.5px;
+}
+
+.logo span {
+    color: #e8c9a8;
+    text-shadow: 0 0 20px rgba(232, 201, 168, 0.3);
+}
+
+nav ul {
+    list-style: none;
+    display: flex;
+    gap: 1.5rem;
+}
+
+nav a {
+    color: #fff;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+nav a:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #e8c9a8;
+}
+
+/* Hero Section (Home page) */
+.hero {
+    background: linear-gradient(135deg, rgba(92, 46, 66, 0.85) 0%, rgba(125, 60, 92, 0.9) 50%, rgba(92, 46, 66, 0.85) 100%),
+                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><pattern id="diamonds" width="20" height="20" patternUnits="userSpaceOnUse"><path fill="%23e8c9a8" fill-opacity="0.15" d="M10 0 L20 10 L10 20 L0 10 Z"/></pattern></defs><rect fill="url(%23diamonds)" width="120" height="120"/></svg>');
+    color: #fff;
+    padding: 4rem 0;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.hero p {
+    font-size: 1.2rem;
+    max-width: 600px;
+    margin: 0 auto;
+    color: #f8efe8;
+}
+
+/* Page Titles */
+.page-title {
+    background: linear-gradient(135deg, #5c2e42 0%, #7d3c5c 100%);
+    color: #fff;
+    padding: 2rem 0;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(92, 46, 66, 0.25);
+}
+
+.page-title h1 {
+    font-size: 2rem;
+}
+
+/* Main Content */
+main {
+    padding: 2rem 0;
+    min-height: 400px;
+}
+
+main h2 {
+    color: #5c2e42;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+}
+
+main p {
+    margin-bottom: 1rem;
+}
+
+main a {
+    color: #7d3c5c;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s;
+}
+
+main a:hover {
+    color: #a8557a;
+}
+
+/* Content Images */
+.content-image {
+    width: 100%;
+    max-width: 280px;
+    height: auto;
+    border-radius: 12px;
+    margin: 0 auto 1.5rem auto;
+    box-shadow: 0 4px 20px rgba(92, 46, 66, 0.15);
+    display: block;
+}
+
+/* Content Sections */
+.content-section {
+    margin-bottom: 2rem;
+}
+
+/* Product/Service Cards */
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.product-card {
+    background: #fff;
+    border: 1px solid #e8ddd2;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(92, 46, 66, 0.08);
+    transition: all 0.3s ease;
+}
+
+.product-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(92, 46, 66, 0.15);
+    border-color: #e8c9a8;
+}
+
+.product-card h3 {
+    color: #5c2e42;
+    margin-bottom: 0.5rem;
+}
+
+/* News Intro */
+.news-intro {
+    font-size: 0.95rem;
+    color: #6b5b52;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+}
+
+/* News Articles */
+.news-article {
+    background: #fff;
+    border-left: 4px solid #e8c9a8;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-radius: 0 8px 8px 0;
+    box-shadow: 0 4px 15px rgba(92, 46, 66, 0.06);
+}
+
+.news-article .date {
+    color: #7d3c5c;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+/* Contact Information Display */
+.contact-display {
+    background: #fff;
+    border: 1px solid #e8ddd2;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-top: 1rem;
+    box-shadow: 0 4px 15px rgba(92, 46, 66, 0.08);
+}
+
+.contact-display h3 {
+    color: #5c2e42;
+    margin: 1.5rem 0 0.5rem 0;
+    font-size: 1.1rem;
+}
+
+.contact-display h3:first-child {
+    margin-top: 0;
+}
+
+.contact-display pre {
+    font-family: 'Georgia', serif;
+    white-space: pre-wrap;
+    line-height: 1.8;
+    margin: 0;
+    color: #3d3535;
+}
+
+/* Footer */
+footer {
+    background: linear-gradient(135deg, #3d1f2e 0%, #5c2e42 100%);
+    color: #e8c9a8;
+    text-align: center;
+    padding: 1.5rem 0;
+    margin-top: 3rem;
+    box-shadow: 0 -4px 20px rgba(92, 46, 66, 0.2);
+}
+
+footer p {
+    margin: 0;
+}

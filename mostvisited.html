@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Most Visited Products | Artisan Jewelry by Megha</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="logo">Artisan Jewelry <span>by Megha</span></div>
+            <nav>
+                <ul>
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="about.html">About</a></li>
+                    <li><a href="products.html">Products & Services</a></li>
+                    <li><a href="news.html">News</a></li>
+                    <li><a href="contact.php">Contact</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="page-title">
+        <div class="container">
+            <h1>5 Most Visited Products</h1>
+        </div>
+    </section>
+
+    <main>
+        <div class="container">
+            <div class="content-section">
+                <p>These are the product pages you have opened the most times in this browser. Counts are tracked using cookies only.</p>
+                <ul id="most-list"></ul>
+                <p><a href="products.html">Back to Products</a></p>
+            </div>
+        </div>
+    </main>
+
+    <script src="cookies.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            var most = getMostVisitedProducts(5);
+            var list = document.getElementById("most-list");
+
+            if (!most || most.length === 0) {
+                var li = document.createElement("li");
+                li.textContent = "No product visits have been recorded yet.";
+                list.appendChild(li);
+                return;
+            }
+
+            most.forEach(function (item) {
+                var li = document.createElement("li");
+                var link = document.createElement("a");
+                link.href = item.id + ".html";
+                link.textContent = (item.name || item.id) + " — " + item.count + " visit" + (item.count === 1 ? "" : "s");
+                li.appendChild(link);
+                list.appendChild(li);
+            });
+        });
+    </script>
+</body>
+</html>
+

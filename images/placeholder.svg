@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <rect fill="#f5ebe0" width="800" height="500"/>
+  <path fill="#5c2e42" opacity="0.2" d="M400 150 L480 250 L450 380 L350 380 L320 250 Z"/>
+  <circle fill="#e8c9a8" cx="400" cy="250" r="60" opacity="0.5"/>
+  <text x="400" y="270" font-family="Georgia, serif" font-size="18" fill="#5c2e42" text-anchor="middle">Handcrafting jewelry</text>
+</svg>
