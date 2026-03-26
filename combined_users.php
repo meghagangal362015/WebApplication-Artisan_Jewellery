@@ -432,153 +432,178 @@ $remote_fetch_log   = []; // for ?debug_sources=1
 $source_warnings    = []; // always shown: remote sources that returned no rows
 $browser_fetch_jobs = []; // loaded via JS (fetch API) — see page script
 
-require_once 'db.php';
+require_once __DIR__ . '/db.php';
 
 foreach ($companies as $company) {
     $label = $company['label'] ?? 'Unknown';
 
-    if (!empty($company['local_db'])) {
-        // Local database (Company A)
-        $sql    = "SELECT id, name, email FROM users";
-        $result = $conn->query($sql);
-        if ($result) {
+    try {
+        if (!empty($company['local_db'])) {
+            // Local database (Company A)
+            if (!$conn instanceof mysqli) {
+                $source_warnings[] = $label . ': database connection is not available.';
+                continue;
+            }
+            if ($conn->connect_error) {
+                $source_warnings[] = $label . ': database connection failed — ' . $conn->connect_error;
+                continue;
+            }
+            $sql    = 'SELECT id, name, email FROM users';
+            $result = $conn->query($sql);
+            if ($result === false) {
+                $source_warnings[] = $label . ': query failed — ' . $conn->error;
+                continue;
+            }
             while ($row = $result->fetch_assoc()) {
                 $row['source'] = $label;
                 $all_users[]   = $row;
             }
-        }
-        continue;
-    }
-
-    // Remote: same flow for Company B, Company C, and any future entry
-    $api_url = $company['api_url'] ?? '';
-    if ($api_url === '') {
-        continue;
-    }
-
-    $sslPref = $company['curl_ssl_verify'] ?? null; // null = auto (secure + SSL retry), true/false to force
-    $urls    = array_values(array_filter(array_merge(
-        [$api_url],
-        array_map('trim', $company['api_url_fallbacks'] ?? [])
-    )));
-
-    if (!empty($company['fetch_in_browser'])) {
-        $browser_fetch_jobs[] = [
-            'label' => $label,
-            'urls'  => $urls,
-        ];
-        $remote_fetch_log[] = [
-            'label'      => $label,
-            'url_tried'  => $urls,
-            'url_used'   => '(visitor browser — fetch() API)',
-            'http_code'  => 0,
-            'errno'      => 0,
-            'error'      => '',
-            'via'        => 'browser',
-            'bytes'      => 0,
-            'ssl_retry'  => false,
-            'json_error' => null,
-            'rows'       => null,
-            'note'       => 'Rows appear after JavaScript runs. Friend’s API must allow CORS from this site.',
-        ];
-        continue;
-    }
-
-    $fetch     = null;
-    $url_used  = '';
-    $response  = '';
-    foreach ($urls as $tryUrl) {
-        if ($tryUrl === '') {
             continue;
         }
-        $fetch = fetch_remote($tryUrl, 15, $sslPref);
-        $response = sanitize_json_response_body($fetch['body']);
-        if ($response !== '') {
-            $url_used = $tryUrl;
-            break;
-        }
-    }
 
-    if ($response === '') {
-        $last = $fetch ?? ['http_code' => 0, 'errno' => 0, 'error' => 'no attempt', 'ssl_retry_insecure' => false];
-        $fb   = load_company_fallback_json($company);
-        if ($fb === null) {
+        // Remote: same flow for Company B, Company C, and any future entry
+        $api_url = $company['api_url'] ?? '';
+        if ($api_url === '') {
+            continue;
+        }
+
+        $sslPref = $company['curl_ssl_verify'] ?? null; // null = auto (secure + SSL retry), true/false to force
+        $urls    = array_values(array_filter(array_merge(
+            [$api_url],
+            array_map('trim', $company['api_url_fallbacks'] ?? [])
+        )));
+
+        if (!empty($company['fetch_in_browser'])) {
+            $browser_fetch_jobs[] = [
+                'label' => $label,
+                'urls'  => $urls,
+            ];
             $remote_fetch_log[] = [
                 'label'      => $label,
                 'url_tried'  => $urls,
-                'url_used'   => '',
-                'http_code'  => $last['http_code'],
-                'errno'      => $last['errno'],
-                'error'      => $last['error'],
-                'via'        => $last['via'] ?? 'curl',
+                'url_used'   => '(visitor browser — fetch() API)',
+                'http_code'  => 0,
+                'errno'      => 0,
+                'error'      => '',
+                'via'        => 'browser',
                 'bytes'      => 0,
-                'ssl_retry'  => !empty($last['ssl_retry_insecure']),
+                'ssl_retry'  => false,
                 'json_error' => null,
-                'rows'       => 0,
+                'rows'       => null,
+                'note'       => 'Rows appear after JavaScript runs. Friend’s API must allow CORS from this site.',
             ];
-            $source_warnings[] = $label . ': no response from API (tried ' . count($urls) . ' URL(s)). Last cURL: '
-                . ($last['error'] !== '' ? $last['error'] : ('HTTP ' . (string) $last['http_code'] . ' errno ' . (string) $last['errno']));
             continue;
         }
-        $rows           = $fb['rows'];
-        $jsonErr        = null;
-        $response       = $fb['raw'];
-        $url_used       = $fb['label'];
-        $responseIsHtml = false;
-    } else {
-        [$decoded, $jsonErr] = decode_json_from_api_body($response);
-        $rows                = json_to_user_rows($decoded ?? []);
-        $responseIsHtml      = response_body_looks_like_html($response);
 
-        if ($responseIsHtml && $jsonErr === null && count($rows) === 0) {
-            $jsonErr = remote_html_explanation($response);
-        }
-
-        if ($jsonErr !== null || count($rows) === 0) {
-            $fb = load_company_fallback_json($company);
-            if ($fb !== null) {
-                $rows           = $fb['rows'];
-                $jsonErr        = null;
-                $response       = $fb['raw'];
-                $url_used       = $fb['label'];
-                $responseIsHtml = false;
+        $fetch     = null;
+        $url_used  = '';
+        $response  = '';
+        foreach ($urls as $tryUrl) {
+            if ($tryUrl === '') {
+                continue;
+            }
+            $fetch = fetch_remote($tryUrl, 15, $sslPref);
+            $response = sanitize_json_response_body($fetch['body']);
+            if ($response !== '') {
+                $url_used = $tryUrl;
+                break;
             }
         }
-    }
 
-    $remote_fetch_log[] = [
-        'label'      => $label,
-        'url_tried'  => $urls,
-        'url_used'   => $url_used,
-        'http_code'  => $fetch['http_code'],
-        'errno'      => $fetch['errno'],
-        'error'      => $fetch['error'],
-        'via'        => $fetch['via'] ?? 'curl',
-        'bytes'      => strlen($response),
-        'ssl_retry'  => !empty($fetch['ssl_retry_insecure']),
-        'json_error' => $jsonErr,
-        'looks_html' => $responseIsHtml,
-        'rows'       => count($rows),
-    ];
+        if ($response === '') {
+            $last = $fetch ?? ['http_code' => 0, 'errno' => 0, 'error' => 'no attempt', 'ssl_retry_insecure' => false];
+            $fb   = load_company_fallback_json($company);
+            if ($fb === null) {
+                $remote_fetch_log[] = [
+                    'label'      => $label,
+                    'url_tried'  => $urls,
+                    'url_used'   => '',
+                    'http_code'  => $last['http_code'],
+                    'errno'      => $last['errno'],
+                    'error'      => $last['error'],
+                    'via'        => $last['via'] ?? 'curl',
+                    'bytes'      => 0,
+                    'ssl_retry'  => !empty($last['ssl_retry_insecure']),
+                    'json_error' => null,
+                    'rows'       => 0,
+                ];
+                $source_warnings[] = $label . ': no response from API (tried ' . count($urls) . ' URL(s)). Last cURL: '
+                    . ($last['error'] !== '' ? $last['error'] : ('HTTP ' . (string) $last['http_code'] . ' errno ' . (string) $last['errno']));
+                continue;
+            }
+            $rows           = $fb['rows'];
+            $jsonErr        = null;
+            $response       = $fb['raw'];
+            $url_used       = $fb['label'];
+            $responseIsHtml = false;
+        } else {
+            [$decoded, $jsonErr] = decode_json_from_api_body($response);
+            $rows                = json_to_user_rows($decoded ?? []);
+            $responseIsHtml      = response_body_looks_like_html($response);
 
-    if ($jsonErr !== null) {
-        $source_warnings[] = $label . ': ' . $jsonErr;
-    } elseif (count($rows) === 0) {
-        $source_warnings[] = $label . ': response was not a recognized user list (0 rows). First 120 chars: '
-            . substr($response, 0, 120);
-    }
+            if ($responseIsHtml && $jsonErr === null && count($rows) === 0) {
+                $jsonErr = remote_html_explanation($response);
+            }
 
-    foreach ($rows as $user) {
-        $user = normalize_user_row($user);
-        if ($user === []) {
-            continue;
+            if ($jsonErr !== null || count($rows) === 0) {
+                $fb = load_company_fallback_json($company);
+                if ($fb !== null) {
+                    $rows           = $fb['rows'];
+                    $jsonErr        = null;
+                    $response       = $fb['raw'];
+                    $url_used       = $fb['label'];
+                    $responseIsHtml = false;
+                }
+            }
         }
-        $user['source'] = $label;
-        $all_users[]    = $user;
+
+        $remote_fetch_log[] = [
+            'label'      => $label,
+            'url_tried'  => $urls,
+            'url_used'   => $url_used,
+            'http_code'  => $fetch['http_code'],
+            'errno'      => $fetch['errno'],
+            'error'      => $fetch['error'],
+            'via'        => $fetch['via'] ?? 'curl',
+            'bytes'      => strlen($response),
+            'ssl_retry'  => !empty($fetch['ssl_retry_insecure']),
+            'json_error' => $jsonErr,
+            'looks_html' => $responseIsHtml,
+            'rows'       => count($rows),
+        ];
+
+        if ($jsonErr !== null) {
+            $source_warnings[] = $label . ': ' . $jsonErr;
+        } elseif (count($rows) === 0) {
+            $source_warnings[] = $label . ': response was not a recognized user list (0 rows). First 120 chars: '
+                . substr($response, 0, 120);
+        }
+
+        foreach ($rows as $user) {
+            $user = normalize_user_row($user);
+            if ($user === []) {
+                continue;
+            }
+            $user['source'] = $label;
+            $all_users[]    = $user;
+        }
+    } catch (Throwable $e) {
+        $source_warnings[] = $label . ': unexpected error — ' . $e->getMessage();
+        if (function_exists('error_log')) {
+            error_log('combined_users.php [' . $label . ']: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+        }
     }
 }
 
-$conn->close();
+if (isset($conn) && $conn instanceof mysqli) {
+    try {
+        $conn->close();
+    } catch (Throwable $e) {
+        if (function_exists('error_log')) {
+            error_log('combined_users.php: db close — ' . $e->getMessage());
+        }
+    }
+}
 
 // Build intro sentence with optional links (skip empty link_url)
 $intro_parts = [];
@@ -637,7 +662,7 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
     <?php endif; ?>
 
     <?php if (!empty($browser_fetch_jobs)): ?>
-    <p class="browser-load-note">Some sources load in your browser (not on the server). Your friend’s API must send <code>Access-Control-Allow-Origin</code> for this <strong>exact</strong> address: <strong><?php echo htmlspecialchars($combined_users_page_origin, ENT_QUOTES, 'UTF-8'); ?></strong> (if you use <code>https://mgcodes.com</code> but people open <code>www</code>, those are different for CORS). Send that string to them, or they can allow <code>*</code> for public JSON only. Open DevTools (F12) → Console if rows still don’t appear.</p>
+    <p class="browser-load-note">Some sources load in your browser (not on the server). Your friend’s API must send <code>Access-Control-Allow-Origin</code> for this <strong>exact</strong> address: <strong><?php echo htmlspecialchars($combined_users_page_origin, ENT_QUOTES, 'UTF-8'); ?></strong> (if you use <code>https://mgcodes.com</code> but people open <code>www</code>, those are different for CORS). Send that string to them, or they can allow <code>*</code> for public JSON only. If something fails, open <strong>DevTools (F12) → Console</strong> (errors are logged). Add <code>?debug_browser=1</code> to this page’s URL for extra console detail while testing.</p>
     <?php endif; ?>
 
     <table>
@@ -676,10 +701,23 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
     ?></script>
     <script>
     (function () {
+        var CU_DEBUG = <?php echo !empty($_GET['debug_browser']) ? 'true' : 'false'; ?>;
+        function logWarn(msg, detail) {
+            if (console.warn) console.warn('[Combined Users]', msg, detail || '');
+        }
+        function logErr(msg, err) {
+            if (console.error) console.error('[Combined Users]', msg, err || '');
+        }
         var el = document.getElementById('combined-users-browser-jobs');
-        if (!el || !el.textContent) return;
+        if (!el || !el.textContent) {
+            logErr('Missing embedded browser-fetch job config');
+            return;
+        }
         var jobs;
-        try { jobs = JSON.parse(el.textContent); } catch (e) { return; }
+        try { jobs = JSON.parse(el.textContent); } catch (e) {
+            logErr('Invalid job JSON embedded in page', e);
+            return;
+        }
         var tbody = document.getElementById('combined-users-tbody');
         if (!tbody || !jobs.length) return;
 
@@ -738,31 +776,53 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
         jobs.forEach(function (job) {
             var label = job.label || 'Unknown';
             var urls = job.urls || [];
-            (function tryUrl(i) {
+            (function tryUrl(i, lastErr) {
                 if (i >= urls.length) {
                     var origin = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
-                    errRow(label, 'Could not load (CORS, network, or HTML instead of JSON). The API must include header Access-Control-Allow-Origin: ' + origin + ' or *. Open F12 → Console / Network for details.');
+                    var lastMsg = lastErr && lastErr.message ? lastErr.message : (lastErr ? String(lastErr) : '');
+                    var msg = 'Could not load after trying ' + urls.length + ' URL(s). ';
+                    msg += 'API must send Access-Control-Allow-Origin: ' + origin + ' (or *). ';
+                    if (lastMsg) msg += 'Last error: ' + lastMsg + '. ';
+                    msg += 'Check Network tab for users.php — response must be JSON with CORS headers.';
+                    errRow(label, msg);
+                    logErr(label + ' — all URLs failed', lastErr || new Error('no URLs or all attempts failed'));
                     removeLoadingPlaceholder();
                     return;
                 }
-                fetch(urls[i], { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' })
+                var url = urls[i];
+                fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' })
                     .then(function (r) {
-                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        if (!r.ok) {
+                            var httpErr = new Error('HTTP ' + r.status + ' ' + (r.statusText || '') + ' — ' + url);
+                            if (CU_DEBUG) logWarn('Bad status', httpErr.message);
+                            throw httpErr;
+                        }
                         return r.text();
                     })
                     .then(function (text) {
                         var d = parseJsonLoose(text);
-                        if (!d) throw new Error('invalid JSON or HTML');
+                        if (!d) {
+                            var pe = new Error('Response was not JSON (often HTML / bot page). URL: ' + url);
+                            if (CU_DEBUG) logWarn('Parse failed', pe.message);
+                            throw pe;
+                        }
                         var rows = jsonToRows(d);
-                        if (!rows.length) throw new Error('No user rows in JSON');
+                        if (!rows.length) {
+                            throw new Error('JSON contained no user rows — ' + url);
+                        }
                         rows.forEach(function (raw) {
                             var u = norm(raw);
                             if (u) appendRow(u.id, u.name, u.email, label);
                         });
+                        if (CU_DEBUG) logWarn(label + ' — OK', url);
                         removeLoadingPlaceholder();
                     })
-                    .catch(function () { tryUrl(i + 1); });
-            })(0);
+                    .catch(function (err) {
+                        var nextErr = err || new Error('Unknown fetch error');
+                        if (CU_DEBUG) logWarn('Retry after URL failed: ' + url, nextErr.message || nextErr);
+                        tryUrl(i + 1, nextErr);
+                    });
+            })(0, null);
         });
     })();
     </script>
