@@ -842,6 +842,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
             border: 1px solid #e8ddd2;
         }
         .combined-stats strong { color: #5c2e42; font-size: 1.35rem; }
+        .combined-seq-hint { font-size: 0.92rem; color: #6b5d5d; margin: 0 0 1rem; line-height: 1.45; }
         .combined-tabs {
             display: flex;
             flex-wrap: wrap;
@@ -863,7 +864,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
         .combined-tab:hover { background: #fff; border-color: #7d3c5c; color: #7d3c5c; }
         .combined-tab.active { background: linear-gradient(135deg, #5c2e42 0%, #7d3c5c 100%); color: #fff; border-color: #5c2e42; }
         .combined-table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #e8ddd2; }
-        .combined-table { width: 100%; border-collapse: collapse; min-width: 520px; background: #fff; }
+        .combined-table { width: 100%; border-collapse: collapse; min-width: 580px; background: #fff; }
         .combined-table thead th {
             text-align: left;
             padding: 0.85rem 1rem;
@@ -878,6 +879,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
         .combined-table tbody tr.combined-user-row:nth-child(even) { background: #fdf9f5; }
         .combined-table tbody tr.combined-user-row:hover { background: rgba(125, 60, 92, 0.06); }
         .combined-table .source { font-size: 0.92em; color: #7d3c5c; font-weight: 600; }
+        .combined-table .combined-seq { text-align: right; width: 3rem; color: #6b5d5d; font-variant-numeric: tabular-nums; font-weight: 600; }
         .browser-load-note { font-size: 0.95rem; color: #4a4242; line-height: 1.55; margin: 1rem 0; padding: 1rem; background: #f8f4ef; border-radius: 10px; border: 1px solid #e8ddd2; }
         .browser-fetch-err { color: #8b2942 !important; background: #fce8ec !important; font-weight: 600; }
         .browser-fetch-err td { border-bottom-color: #f5d0d8; }
@@ -916,7 +918,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
 
     <main>
     <div class="container">
-    <!-- combined_users build: 2026-04-08 site UI + source tabs + file+embedded-json + optional browser -->
+    <!-- combined_users build: 2026-04-08 seq global + per-source; source-id col (upload to Hostinger) -->
     <div class="combined-card">
     <p class="combined-intro"><?php echo $intro_sentence; ?></p>
 
@@ -925,10 +927,11 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
     </div>
 
     <?php if (count($unique_sources) > 0): ?>
+    <p id="combined-seq-hint" class="combined-seq-hint"></p>
     <div class="combined-tabs" role="tablist" aria-label="Filter by company source">
-        <button type="button" class="combined-tab active" data-filter="all" role="tab" aria-selected="true">All sources</button>
+        <button type="button" class="combined-tab active" data-filter="all" role="tab" aria-selected="true" data-hint="Seq is one list for everyone: 1, 2, 3… across all companies.">All sources</button>
         <?php foreach ($unique_sources as $src): ?>
-        <button type="button" class="combined-tab" data-filter="<?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?>" role="tab" aria-selected="false"><?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?></button>
+        <button type="button" class="combined-tab" data-filter="<?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?>" role="tab" aria-selected="false" data-hint="<?php echo htmlspecialchars('Seq starts at 1 again for this source only (' . $src . ').', ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?></button>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
@@ -970,24 +973,36 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
     <table class="combined-table">
         <thead>
             <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Source</th>
+                <th class="combined-seq" scope="col" id="combined-seq-th" title="Combined order 1…N when all sources are shown; per-source 1…n when one company tab is selected">Seq</th>
+                <th scope="col" title="Original id from that company’s database or API">Source ID</th>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Source</th>
             </tr>
         </thead>
         <tbody id="combined-users-tbody">
             <?php if (empty($all_users) && empty($browser_fetch_jobs)): ?>
                 <tr class="combined-empty-row" data-role="empty">
-                    <td colspan="4">No users found.</td>
+                    <td colspan="5">No users found.</td>
                 </tr>
             <?php else: ?>
                 <?php if (empty($all_users) && !empty($browser_fetch_jobs)): ?>
-                <tr id="combined-users-placeholder" data-role="loading"><td colspan="4">Loading remote users in your browser…</td></tr>
+                <tr id="combined-users-placeholder" data-role="loading"><td colspan="5">Loading remote users in your browser…</td></tr>
                 <?php endif; ?>
-                <?php foreach ($all_users as $user): ?>
-                    <?php $srcAttr = (string)($user['source'] ?? 'Unknown'); ?>
-                    <tr class="combined-user-row" data-source="<?php echo htmlspecialchars($srcAttr, ENT_QUOTES, 'UTF-8'); ?>">
+                <?php
+                $row_seq = 0;
+                $source_seq_by_label = [];
+                foreach ($all_users as $user):
+                    $row_seq++;
+                    $srcAttr = (string)($user['source'] ?? 'Unknown');
+                    if (!isset($source_seq_by_label[$srcAttr])) {
+                        $source_seq_by_label[$srcAttr] = 0;
+                    }
+                    $source_seq_by_label[$srcAttr]++;
+                    $sourceSeq = $source_seq_by_label[$srcAttr];
+                    ?>
+                    <tr class="combined-user-row" data-source="<?php echo htmlspecialchars($srcAttr, ENT_QUOTES, 'UTF-8'); ?>" data-global-seq="<?php echo (int) $row_seq; ?>" data-source-seq="<?php echo (int) $sourceSeq; ?>">
+                        <td class="combined-seq"><?php echo (int) $row_seq; ?></td>
                         <td><?php echo htmlspecialchars((string)($user['id'] ?? '-')); ?></td>
                         <td><?php echo htmlspecialchars((string)($user['name'] ?? '')); ?></td>
                         <td><?php echo htmlspecialchars((string)($user['email'] ?? '')); ?></td>
@@ -1004,12 +1019,6 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
     (function () {
         var currentFilter = 'all';
         var tbody = document.getElementById('combined-users-tbody');
-        function recount() {
-            if (!tbody) return;
-            var n = tbody.querySelectorAll('tr.combined-user-row').length;
-            var el = document.getElementById('combined-user-count');
-            if (el) el.textContent = String(n);
-        }
         function applyFilter() {
             if (!tbody) return;
             tbody.querySelectorAll('tr').forEach(function (tr) {
@@ -1029,6 +1038,74 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
                 }
             });
         }
+        function syncGlobalSeqFromDom() {
+            if (!tbody) return;
+            var i = 0;
+            tbody.querySelectorAll('tr.combined-user-row').forEach(function (tr) {
+                i++;
+                tr.setAttribute('data-global-seq', String(i));
+            });
+        }
+        function syncSourceSeqFromDom() {
+            if (!tbody) return;
+            var bySource = {};
+            tbody.querySelectorAll('tr.combined-user-row').forEach(function (tr) {
+                var src = tr.getAttribute('data-source') || '';
+                bySource[src] = (bySource[src] || 0) + 1;
+                tr.setAttribute('data-source-seq', String(bySource[src]));
+            });
+        }
+        function renumberVisibleUserRows() {
+            if (!tbody) return;
+            if (currentFilter === 'all') {
+                tbody.querySelectorAll('tr.combined-user-row').forEach(function (tr) {
+                    var cell = tr.querySelector('td.combined-seq');
+                    var g = tr.getAttribute('data-global-seq');
+                    if (cell && g) {
+                        cell.textContent = g;
+                    }
+                });
+                return;
+            }
+            tbody.querySelectorAll('tr.combined-user-row').forEach(function (tr) {
+                if (tr.style.display === 'none') {
+                    return;
+                }
+                var cell = tr.querySelector('td.combined-seq');
+                var s = tr.getAttribute('data-source-seq');
+                if (cell && s) {
+                    cell.textContent = s;
+                }
+            });
+        }
+        function updateSeqHint() {
+            var hint = document.getElementById('combined-seq-hint');
+            if (!hint) {
+                return;
+            }
+            var tab = document.querySelector('.combined-tab.active');
+            var text = tab && tab.getAttribute('data-hint') ? tab.getAttribute('data-hint') : '';
+            hint.textContent = text;
+        }
+        function recount() {
+            if (!tbody) return;
+            var el = document.getElementById('combined-user-count');
+            if (!el) {
+                return;
+            }
+            var total = tbody.querySelectorAll('tr.combined-user-row').length;
+            if (currentFilter === 'all') {
+                el.textContent = String(total);
+                return;
+            }
+            var vis = 0;
+            tbody.querySelectorAll('tr.combined-user-row').forEach(function (tr) {
+                if (tr.style.display !== 'none') {
+                    vis++;
+                }
+            });
+            el.textContent = String(vis);
+        }
         function setActiveTab(activeBtn) {
             document.querySelectorAll('.combined-tab').forEach(function (b) {
                 var on = b === activeBtn;
@@ -1040,16 +1117,24 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
             btn.addEventListener('click', function () {
                 currentFilter = btn.getAttribute('data-filter') || 'all';
                 setActiveTab(btn);
-                recount();
                 applyFilter();
+                recount();
+                renumberVisibleUserRows();
+                updateSeqHint();
             });
         });
         window.__combinedRefresh = function () {
-            recount();
+            syncGlobalSeqFromDom();
+            syncSourceSeqFromDom();
             applyFilter();
+            recount();
+            renumberVisibleUserRows();
+            updateSeqHint();
         };
-        recount();
         applyFilter();
+        recount();
+        renumberVisibleUserRows();
+        updateSeqHint();
     })();
     </script>
 
@@ -1118,14 +1203,14 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
             var tr = document.createElement('tr');
             tr.className = 'combined-user-row';
             tr.setAttribute('data-source', source);
-            tr.innerHTML = '<td>' + esc(id) + '</td><td>' + esc(name) + '</td><td>' + esc(email) + '</td><td class="source">' + esc(source) + '</td>';
+            tr.innerHTML = '<td class="combined-seq"></td><td>' + esc(id) + '</td><td>' + esc(name) + '</td><td>' + esc(email) + '</td><td class="source">' + esc(source) + '</td>';
             tbody.appendChild(tr);
         }
         function errRow(label, msg) {
             var tr = document.createElement('tr');
             tr.className = 'browser-fetch-err';
             tr.setAttribute('data-source', label);
-            tr.innerHTML = '<td colspan="4">' + esc(label + ': ' + msg) + '</td>';
+            tr.innerHTML = '<td colspan="5">' + esc(label + ': ' + msg) + '</td>';
             tbody.appendChild(tr);
             if (window.__combinedRefresh) window.__combinedRefresh();
         }
