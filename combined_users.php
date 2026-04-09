@@ -842,7 +842,6 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
             border: 1px solid #e8ddd2;
         }
         .combined-stats strong { color: #5c2e42; font-size: 1.35rem; }
-        .combined-seq-hint { font-size: 0.92rem; color: #6b5d5d; margin: 0 0 1rem; line-height: 1.45; }
         .combined-tabs {
             display: flex;
             flex-wrap: wrap;
@@ -864,7 +863,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
         .combined-tab:hover { background: #fff; border-color: #7d3c5c; color: #7d3c5c; }
         .combined-tab.active { background: linear-gradient(135deg, #5c2e42 0%, #7d3c5c 100%); color: #fff; border-color: #5c2e42; }
         .combined-table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #e8ddd2; }
-        .combined-table { width: 100%; border-collapse: collapse; min-width: 580px; background: #fff; }
+        .combined-table { width: 100%; border-collapse: collapse; min-width: 480px; background: #fff; }
         .combined-table thead th {
             text-align: left;
             padding: 0.85rem 1rem;
@@ -918,7 +917,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
 
     <main>
     <div class="container">
-    <!-- combined_users build: 2026-04-08 seq global + per-source; source-id col (upload to Hostinger) -->
+    <!-- combined_users build: 2026-04-08 seq tabs; no seq hint line -->
     <div class="combined-card">
     <p class="combined-intro"><?php echo $intro_sentence; ?></p>
 
@@ -927,11 +926,10 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
     </div>
 
     <?php if (count($unique_sources) > 0): ?>
-    <p id="combined-seq-hint" class="combined-seq-hint"></p>
     <div class="combined-tabs" role="tablist" aria-label="Filter by company source">
-        <button type="button" class="combined-tab active" data-filter="all" role="tab" aria-selected="true" data-hint="Seq is one list for everyone: 1, 2, 3… across all companies.">All sources</button>
+        <button type="button" class="combined-tab active" data-filter="all" role="tab" aria-selected="true">All sources</button>
         <?php foreach ($unique_sources as $src): ?>
-        <button type="button" class="combined-tab" data-filter="<?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?>" role="tab" aria-selected="false" data-hint="<?php echo htmlspecialchars('Seq starts at 1 again for this source only (' . $src . ').', ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?></button>
+        <button type="button" class="combined-tab" data-filter="<?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?>" role="tab" aria-selected="false"><?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?></button>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
@@ -974,7 +972,6 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
         <thead>
             <tr>
                 <th class="combined-seq" scope="col" id="combined-seq-th" title="Combined order 1…N when all sources are shown; per-source 1…n when one company tab is selected">Seq</th>
-                <th scope="col" title="Original id from that company’s database or API">Source ID</th>
                 <th scope="col">Name</th>
                 <th scope="col">Email</th>
                 <th scope="col">Source</th>
@@ -983,11 +980,11 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
         <tbody id="combined-users-tbody">
             <?php if (empty($all_users) && empty($browser_fetch_jobs)): ?>
                 <tr class="combined-empty-row" data-role="empty">
-                    <td colspan="5">No users found.</td>
+                    <td colspan="4">No users found.</td>
                 </tr>
             <?php else: ?>
                 <?php if (empty($all_users) && !empty($browser_fetch_jobs)): ?>
-                <tr id="combined-users-placeholder" data-role="loading"><td colspan="5">Loading remote users in your browser…</td></tr>
+                <tr id="combined-users-placeholder" data-role="loading"><td colspan="4">Loading remote users in your browser…</td></tr>
                 <?php endif; ?>
                 <?php
                 $row_seq = 0;
@@ -1003,7 +1000,6 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
                     ?>
                     <tr class="combined-user-row" data-source="<?php echo htmlspecialchars($srcAttr, ENT_QUOTES, 'UTF-8'); ?>" data-global-seq="<?php echo (int) $row_seq; ?>" data-source-seq="<?php echo (int) $sourceSeq; ?>">
                         <td class="combined-seq"><?php echo (int) $row_seq; ?></td>
-                        <td><?php echo htmlspecialchars((string)($user['id'] ?? '-')); ?></td>
                         <td><?php echo htmlspecialchars((string)($user['name'] ?? '')); ?></td>
                         <td><?php echo htmlspecialchars((string)($user['email'] ?? '')); ?></td>
                         <td class="source"><?php echo htmlspecialchars($srcAttr, ENT_QUOTES, 'UTF-8'); ?></td>
@@ -1078,15 +1074,6 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
                 }
             });
         }
-        function updateSeqHint() {
-            var hint = document.getElementById('combined-seq-hint');
-            if (!hint) {
-                return;
-            }
-            var tab = document.querySelector('.combined-tab.active');
-            var text = tab && tab.getAttribute('data-hint') ? tab.getAttribute('data-hint') : '';
-            hint.textContent = text;
-        }
         function recount() {
             if (!tbody) return;
             var el = document.getElementById('combined-user-count');
@@ -1120,7 +1107,6 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
                 applyFilter();
                 recount();
                 renumberVisibleUserRows();
-                updateSeqHint();
             });
         });
         window.__combinedRefresh = function () {
@@ -1129,12 +1115,10 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
             applyFilter();
             recount();
             renumberVisibleUserRows();
-            updateSeqHint();
         };
         applyFilter();
         recount();
         renumberVisibleUserRows();
-        updateSeqHint();
     })();
     </script>
 
@@ -1199,18 +1183,18 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
             span.appendChild(t);
             return span.innerHTML;
         }
-        function appendRow(id, name, email, source) {
+        function appendRow(name, email, source) {
             var tr = document.createElement('tr');
             tr.className = 'combined-user-row';
             tr.setAttribute('data-source', source);
-            tr.innerHTML = '<td class="combined-seq"></td><td>' + esc(id) + '</td><td>' + esc(name) + '</td><td>' + esc(email) + '</td><td class="source">' + esc(source) + '</td>';
+            tr.innerHTML = '<td class="combined-seq"></td><td>' + esc(name) + '</td><td>' + esc(email) + '</td><td class="source">' + esc(source) + '</td>';
             tbody.appendChild(tr);
         }
         function errRow(label, msg) {
             var tr = document.createElement('tr');
             tr.className = 'browser-fetch-err';
             tr.setAttribute('data-source', label);
-            tr.innerHTML = '<td colspan="5">' + esc(label + ': ' + msg) + '</td>';
+            tr.innerHTML = '<td colspan="4">' + esc(label + ': ' + msg) + '</td>';
             tbody.appendChild(tr);
             if (window.__combinedRefresh) window.__combinedRefresh();
         }
