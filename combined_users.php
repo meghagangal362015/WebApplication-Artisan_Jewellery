@@ -30,10 +30,15 @@ $companies = [
     [
         'label'     => 'Company C (Komal Gupta Makeup Studio)',
         'local_db'  => false,
-        // Browser fetch needs CORS. The header must match how visitors open THIS page exactly (https vs http, www vs no-www).
-        // Friend can use: if (in_array($_SERVER['HTTP_ORIGIN'] ?? '', ['https://mgcodes.com','https://www.mgcodes.com'], true)) { header('Access-Control-Allow-Origin: '.$_SERVER['HTTP_ORIGIN']); }
-        // Or for public read-only JSON: header('Access-Control-Allow-Origin: *');
-        'fetch_in_browser' => true,
+        // 1) Server-side curl (sometimes works). 2) company_c_users.json next to this file (works without CORS — paste API JSON from a browser). 3) Browser fetch (needs CORS on buildinfra nginx/OpenResty, not only PHP).
+        'fetch_in_browser'       => true,
+        'try_server_fetch_first' => true,
+        'curl_ssl_verify'        => false,
+        'fallback_json_file'     => 'company_c_users.json',
+        // Used if the .json file is missing/unreadable on hosting — same data; update both when Komal’s list changes.
+        'embedded_fallback_json' => '[{"id":"2","name":"Alice","email":"alice@gmail.com"},{"id":"1","name":"Mansi","email":"mansi.gupta@kg.com"}]',
+        // Stops the red “CORS” browser row — Company C comes from file / embedded (+ optional server curl). Set false if the API gets working CORS later.
+        'suppress_browser_fetch' => true,
         'api_url'   => 'https://buildinfra.me/kgmakeupstudio/api/users.php',
         'api_url_fallbacks' => [
             'http://buildinfra.me/kgmakeupstudio/api/users.php',
@@ -127,24 +132,68 @@ function load_company_fallback_json($company)
     if ($fallbackRel === null || $fallbackRel === '') {
         return null;
     }
-    $fbPath = resolve_local_json_path($fallbackRel);
-    if ($fbPath === '' || !is_readable($fbPath)) {
-        return null;
+    $candidates = array_unique(array_filter([
+        resolve_local_json_path($fallbackRel),
+        __DIR__ . '/' . basename($fallbackRel),
+    ]));
+    foreach ($candidates as $fbPath) {
+        if ($fbPath === '' || !is_readable($fbPath)) {
+            continue;
+        }
+        $fileRaw = @file_get_contents($fbPath);
+        if ($fileRaw === false || $fileRaw === '') {
+            continue;
+        }
+        $parsed = _parse_fallback_user_json_string($fileRaw);
+        if ($parsed !== null) {
+            $parsed['label'] = basename($fbPath) . ' (local fallback_json_file)';
+            return $parsed;
+        }
     }
-    $fileRaw = @file_get_contents($fbPath);
-    if ($fileRaw === false || $fileRaw === '') {
-        return null;
+    return null;
+}
+
+/**
+ * @return array{rows: array, raw: string, label?: string}|null
+ */
+function _parse_fallback_user_json_string($fileRaw)
+{
+    $trim = sanitize_json_response_body($fileRaw);
+    // Widest host compatibility — avoid extra json_decode() args
+    $quick = json_decode($trim, true);
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($quick)) {
+        [$decoded, $fe] = decode_json_from_api_body($fileRaw);
+        if ($fe !== null) {
+            return null;
+        }
+        $quick = $decoded;
     }
-    [$decoded, $fe] = decode_json_from_api_body($fileRaw);
-    $tryRows        = json_to_user_rows($decoded ?? []);
-    if ($fe !== null || count($tryRows) === 0) {
+    $tryRows = json_to_user_rows($quick);
+    if (count($tryRows) === 0) {
         return null;
     }
     return [
         'rows'  => $tryRows,
         'raw'   => $fileRaw,
-        'label' => basename($fbPath) . ' (local fallback_json_file)',
+        'label' => '',
     ];
+}
+
+/**
+ * @return array{rows: array, raw: string, label: string}|null
+ */
+function load_embedded_company_users_json($company)
+{
+    $raw = $company['embedded_fallback_json'] ?? null;
+    if ($raw === null || $raw === '') {
+        return null;
+    }
+    $parsed = _parse_fallback_user_json_string($raw);
+    if ($parsed === null) {
+        return null;
+    }
+    $parsed['label'] = 'embedded in combined_users.php';
+    return $parsed;
 }
 
 /**
@@ -474,6 +523,123 @@ foreach ($companies as $company) {
         )));
 
         if (!empty($company['fetch_in_browser'])) {
+            // A) Local JSON file, then embedded string in this file (always works when uploaded).
+            $fbBr = load_company_fallback_json($company);
+            if ($fbBr === null) {
+                $fbBr = load_embedded_company_users_json($company);
+            }
+            if ($fbBr !== null) {
+                $remote_fetch_log[] = [
+                    'label'      => $label,
+                    'url_tried'  => $urls,
+                    'url_used'   => $fbBr['label'],
+                    'http_code'  => 0,
+                    'errno'      => 0,
+                    'error'      => '',
+                    'via'        => 'local_file',
+                    'bytes'      => strlen($fbBr['raw']),
+                    'ssl_retry'  => false,
+                    'json_error' => null,
+                    'looks_html' => false,
+                    'rows'       => count($fbBr['rows']),
+                    'note'       => 'Loaded from fallback_json_file (no CORS). Update file when the list changes.',
+                ];
+                foreach ($fbBr['rows'] as $user) {
+                    $user = normalize_user_row($user);
+                    if ($user === []) {
+                        continue;
+                    }
+                    $user['source'] = $label;
+                    $all_users[]    = $user;
+                }
+                continue;
+            }
+
+            // Explain why fallback didn’t load (missing file vs invalid JSON)
+            $fbRel = $company['fallback_json_file'] ?? '';
+            if ($fbRel !== '') {
+                $fbAbs = resolve_local_json_path($fbRel);
+                if ($fbAbs === '' || !file_exists($fbAbs)) {
+                    $source_warnings[] = $label . ': missing fallback file "' . basename($fbRel)
+                        . '" — upload it next to combined_users.php (expected: ' . $fbAbs . ').';
+                } elseif (!is_readable($fbAbs)) {
+                    $source_warnings[] = $label . ': cannot read fallback file (permissions?) — ' . $fbAbs;
+                } else {
+                    $source_warnings[] = $label . ': fallback file exists but JSON has no user rows or is invalid — fix '
+                        . basename($fbRel) . ' (must be like [{"id":"1","name":"…","email":"…"}, …]).';
+                }
+            }
+
+            // B) Server-side curl (often returns bot HTML from buildinfra — don’t rely on it).
+            if (!empty($company['try_server_fetch_first'])) {
+                $fetchSrv = null;
+                $respSrv  = '';
+                $urlSrv   = '';
+                foreach ($urls as $tryUrl) {
+                    if ($tryUrl === '') {
+                        continue;
+                    }
+                    $fetchSrv = fetch_remote($tryUrl, 15, $sslPref);
+                    $respSrv  = sanitize_json_response_body($fetchSrv['body']);
+                    if ($respSrv !== '') {
+                        $urlSrv = $tryUrl;
+                        break;
+                    }
+                }
+                if ($respSrv !== '') {
+                    [$decSrv, $errSrv] = decode_json_from_api_body($respSrv);
+                    $rowsSrv           = json_to_user_rows($decSrv ?? []);
+                    $htmlSrv           = response_body_looks_like_html($respSrv);
+                    if ($htmlSrv && $errSrv === null && count($rowsSrv) === 0) {
+                        $errSrv = remote_html_explanation($respSrv);
+                    }
+                    if ($errSrv === null && count($rowsSrv) > 0) {
+                        $remote_fetch_log[] = [
+                            'label'      => $label,
+                            'url_tried'  => $urls,
+                            'url_used'   => $urlSrv,
+                            'http_code'  => $fetchSrv['http_code'],
+                            'errno'      => $fetchSrv['errno'],
+                            'error'      => $fetchSrv['error'],
+                            'via'        => $fetchSrv['via'] ?? 'curl',
+                            'bytes'      => strlen($respSrv),
+                            'ssl_retry'  => !empty($fetchSrv['ssl_retry_insecure']),
+                            'json_error' => null,
+                            'looks_html' => $htmlSrv,
+                            'rows'       => count($rowsSrv),
+                            'note'       => 'Server-side fetch succeeded.',
+                        ];
+                        foreach ($rowsSrv as $user) {
+                            $user = normalize_user_row($user);
+                            if ($user === []) {
+                                continue;
+                            }
+                            $user['source'] = $label;
+                            $all_users[]    = $user;
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // C) Browser fetch (only if not suppressed — needs CORS on buildinfra).
+            if (!empty($company['suppress_browser_fetch'])) {
+                $remote_fetch_log[] = [
+                    'label'      => $label,
+                    'url_tried'  => $urls,
+                    'url_used'   => '(browser disabled — suppress_browser_fetch)',
+                    'http_code'  => 0,
+                    'errno'      => 0,
+                    'error'      => '',
+                    'via'        => 'none',
+                    'bytes'      => 0,
+                    'ssl_retry'  => false,
+                    'json_error' => null,
+                    'rows'       => 0,
+                    'note'       => 'Update company_c_users.json on the server, or set suppress_browser_fetch => false once CORS works.',
+                ];
+                continue;
+            }
             $browser_fetch_jobs[] = [
                 'label' => $label,
                 'urls'  => $urls,
@@ -490,7 +656,7 @@ foreach ($companies as $company) {
                 'ssl_retry'  => false,
                 'json_error' => null,
                 'rows'       => null,
-                'note'       => 'Rows appear after JavaScript runs. Friend’s API must allow CORS from this site.',
+                'note'       => 'Rows after JS. If empty: add company_c_users.json on server OR friend fixes CORS at nginx (OpenResty) for /api/.',
             ];
             continue;
         }
@@ -623,32 +789,167 @@ $intro_sentence = 'Users from ' . implode(', ', $intro_parts) . '.';
 $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http')
     . '://' . ($_SERVER['HTTP_HOST'] ?? '');
 
+$unique_sources = [];
+foreach ($all_users as $u) {
+    $s = (string)($u['source'] ?? '');
+    if ($s !== '' && !in_array($s, $unique_sources, true)) {
+        $unique_sources[] = $s;
+    }
+}
+if (!empty($browser_fetch_jobs) && is_array($browser_fetch_jobs)) {
+    foreach ($browser_fetch_jobs as $job) {
+        $lab = (string)($job['label'] ?? '');
+        if ($lab !== '' && !in_array($lab, $unique_sources, true)) {
+            $unique_sources[] = $lab;
+        }
+    }
+}
+sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Combined Users - All Companies</title>
+    <title>Combined Users | Artisan Jewelry by Megha</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        h1 { color: #333; }
-        table { border-collapse: collapse; width: 100%; max-width: 900px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background: #4a90d9; color: white; }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .source { font-size: 0.9em; color: #666; }
-        .browser-load-note { font-size: 0.9em; color: #555; max-width: 900px; margin: 12px 0; }
-        .browser-fetch-err { color: #b00020; }
-        .debug-sources { margin-top: 2rem; max-width: 900px; font-size: 12px; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; }
+        nav a.active { background: rgba(255, 255, 255, 0.22); color: #e8c9a8; font-weight: 600; pointer-events: none; }
+        .combined-card {
+            background: #fff;
+            border: 1px solid #e8ddd2;
+            border-radius: 16px;
+            padding: 1.75rem 2rem 2rem;
+            margin: 0 auto 2.5rem;
+            max-width: 1000px;
+            box-shadow: 0 8px 32px rgba(92, 46, 66, 0.1);
+        }
+        .combined-card .combined-intro { color: #5a4a4a; font-size: 1.1rem; margin-bottom: 1.25rem; line-height: 1.65; }
+        .combined-card .combined-intro a { color: #7d3c5c; font-weight: 600; }
+        .combined-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            padding: 0.85rem 1.1rem;
+            background: linear-gradient(135deg, rgba(92, 46, 66, 0.06) 0%, rgba(125, 60, 92, 0.08) 100%);
+            border-radius: 10px;
+            border: 1px solid #e8ddd2;
+        }
+        .combined-stats strong { color: #5c2e42; font-size: 1.35rem; }
+        .combined-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .combined-tab {
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border: 1px solid #d4c4b8;
+            border-radius: 999px;
+            background: #fdf8f3;
+            color: #5c2e42;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
+        }
+        .combined-tab:hover { background: #fff; border-color: #7d3c5c; color: #7d3c5c; }
+        .combined-tab.active { background: linear-gradient(135deg, #5c2e42 0%, #7d3c5c 100%); color: #fff; border-color: #5c2e42; }
+        .combined-table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #e8ddd2; }
+        .combined-table { width: 100%; border-collapse: collapse; min-width: 520px; background: #fff; }
+        .combined-table thead th {
+            text-align: left;
+            padding: 0.85rem 1rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #5c2e42 0%, #7d3c5c 100%);
+            font-size: 0.88rem;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+        .combined-table tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid #f0ebe5; color: #3d3535; }
+        .combined-table tbody tr.combined-user-row:nth-child(even) { background: #fdf9f5; }
+        .combined-table tbody tr.combined-user-row:hover { background: rgba(125, 60, 92, 0.06); }
+        .combined-table .source { font-size: 0.92em; color: #7d3c5c; font-weight: 600; }
+        .browser-load-note { font-size: 0.95rem; color: #4a4242; line-height: 1.55; margin: 1rem 0; padding: 1rem; background: #f8f4ef; border-radius: 10px; border: 1px solid #e8ddd2; }
+        .browser-fetch-err { color: #8b2942 !important; background: #fce8ec !important; font-weight: 600; }
+        .browser-fetch-err td { border-bottom-color: #f5d0d8; }
+        .debug-sources { margin: 2rem auto 0; max-width: 1000px; font-size: 12px; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; }
         .debug-sources h2 { font-size: 14px; margin: 0 0 8px; color: #fff; }
-        .source-warn { max-width: 900px; background: #fff3cd; border: 1px solid #ffc107; color: #664d03; padding: 12px 14px; border-radius: 6px; margin: 16px 0; font-size: 14px; }
+        .source-warn { background: #fff8e8; border: 1px solid #e8c9a8; color: #5c3d20; padding: 12px 14px; border-radius: 10px; margin: 1rem 0; font-size: 0.95rem; }
         .source-warn ul { margin: 8px 0 0 18px; padding: 0; }
+        #combined-users-placeholder td { font-style: italic; color: #7d6a62; }
+        .combined-empty-row td { text-align: center; padding: 2rem; color: #7d6a62; }
     </style>
 </head>
 <body>
-    <h1>Combined Users</h1>
-    <p><?php echo $intro_sentence; ?></p>
+    <header>
+        <div class="container">
+            <div class="logo">Artisan Jewelry <span>by Megha</span></div>
+            <nav>
+                <ul>
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="about.html">About</a></li>
+                    <li><a href="products.html">Products & Services</a></li>
+                    <li><a href="news.html">News</a></li>
+                    <li><a href="contact.php">Contact</a></li>
+                    <li><a href="combined_users.php" class="active" aria-current="page">Combined Users</a></li>
+                    <li><a href="login.php">Login</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="page-title">
+        <div class="container">
+            <h1>Combined Users</h1>
+            <p style="margin-top:0.75rem;opacity:0.95;font-size:1.05rem;">All companies in one place — filter by source below.</p>
+        </div>
+    </section>
+
+    <main>
+    <div class="container">
+    <!-- combined_users build: 2026-04-08 site UI + source tabs + file+embedded-json + optional browser -->
+    <div class="combined-card">
+    <p class="combined-intro"><?php echo $intro_sentence; ?></p>
+
+    <div class="combined-stats" aria-live="polite">
+        <span><strong id="combined-user-count"><?php echo (int) count($all_users); ?></strong> users in this table</span>
+    </div>
+
+    <?php if (count($unique_sources) > 0): ?>
+    <div class="combined-tabs" role="tablist" aria-label="Filter by company source">
+        <button type="button" class="combined-tab active" data-filter="all" role="tab" aria-selected="true">All sources</button>
+        <?php foreach ($unique_sources as $src): ?>
+        <button type="button" class="combined-tab" data-filter="<?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?>" role="tab" aria-selected="false"><?php echo htmlspecialchars($src, ENT_QUOTES, 'UTF-8'); ?></button>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!empty($_GET['debug_combined'])): ?>
+    <div class="source-warn" style="background:#e3f2fd;border-color:#2196f3;color:#0d47a1;">
+        <strong>debug_combined=1</strong> — script directory: <code><?php echo htmlspecialchars(__DIR__, ENT_QUOTES, 'UTF-8'); ?></code><br>
+        Company C fallback path: <code><?php $dp = resolve_local_json_path('company_c_users.json'); echo htmlspecialchars($dp, ENT_QUOTES, 'UTF-8'); ?></code>
+        — exists: <?php echo $dp !== '' && file_exists($dp) ? 'yes' : 'no'; ?>,
+        readable: <?php echo $dp !== '' && is_readable($dp) ? 'yes' : 'no'; ?>
+        <?php
+        if ($dp !== '' && is_readable($dp)) {
+            $dbgRaw = @file_get_contents($dp);
+            [$dbgDec, $dbgErr] = decode_json_from_api_body($dbgRaw !== false ? $dbgRaw : '');
+            $dbgRows = json_to_user_rows($dbgDec ?? []);
+            echo '<br>JSON decode error: ' . htmlspecialchars($dbgErr ?? 'none', ENT_QUOTES, 'UTF-8');
+            echo '; parsed user rows: ' . (int) count($dbgRows);
+        }
+        ?>
+    </div>
+    <?php endif; ?>
 
     <?php if (!empty($source_warnings)): ?>
     <div class="source-warn" role="status">
@@ -662,10 +963,11 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
     <?php endif; ?>
 
     <?php if (!empty($browser_fetch_jobs)): ?>
-    <p class="browser-load-note">Some sources load in your browser (not on the server). Your friend’s API must send <code>Access-Control-Allow-Origin</code> for this <strong>exact</strong> address: <strong><?php echo htmlspecialchars($combined_users_page_origin, ENT_QUOTES, 'UTF-8'); ?></strong> (if you use <code>https://mgcodes.com</code> but people open <code>www</code>, those are different for CORS). Send that string to them, or they can allow <code>*</code> for public JSON only. If something fails, open <strong>DevTools (F12) → Console</strong> (errors are logged). Add <code>?debug_browser=1</code> to this page’s URL for extra console detail while testing.</p>
+    <p class="browser-load-note"><strong>Company C:</strong> If rows still fail in the browser, your friend must add CORS in <strong>nginx / OpenResty</strong> (Hostinger often ignores PHP-only headers). Meanwhile you can upload <code>company_c_users.json</code> next to this file (copy JSON from the API in a browser) — it loads <em>before</em> the browser request. Exact origin for CORS: <strong><?php echo htmlspecialchars($combined_users_page_origin, ENT_QUOTES, 'UTF-8'); ?></strong>. <code>?debug_browser=1</code> adds console detail.</p>
     <?php endif; ?>
 
-    <table>
+    <div class="combined-table-wrap">
+    <table class="combined-table">
         <thead>
             <tr>
                 <th>ID</th>
@@ -676,24 +978,80 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
         </thead>
         <tbody id="combined-users-tbody">
             <?php if (empty($all_users) && empty($browser_fetch_jobs)): ?>
-                <tr>
+                <tr class="combined-empty-row" data-role="empty">
                     <td colspan="4">No users found.</td>
                 </tr>
             <?php else: ?>
                 <?php if (empty($all_users) && !empty($browser_fetch_jobs)): ?>
-                <tr id="combined-users-placeholder"><td colspan="4">Loading remote users in your browser…</td></tr>
+                <tr id="combined-users-placeholder" data-role="loading"><td colspan="4">Loading remote users in your browser…</td></tr>
                 <?php endif; ?>
                 <?php foreach ($all_users as $user): ?>
-                    <tr>
+                    <?php $srcAttr = (string)($user['source'] ?? 'Unknown'); ?>
+                    <tr class="combined-user-row" data-source="<?php echo htmlspecialchars($srcAttr, ENT_QUOTES, 'UTF-8'); ?>">
                         <td><?php echo htmlspecialchars((string)($user['id'] ?? '-')); ?></td>
                         <td><?php echo htmlspecialchars((string)($user['name'] ?? '')); ?></td>
                         <td><?php echo htmlspecialchars((string)($user['email'] ?? '')); ?></td>
-                        <td class="source"><?php echo htmlspecialchars((string)($user['source'] ?? 'Unknown')); ?></td>
+                        <td class="source"><?php echo htmlspecialchars($srcAttr, ENT_QUOTES, 'UTF-8'); ?></td>
                     </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
         </tbody>
     </table>
+    </div>
+    </div><?php /* .combined-card */ ?>
+
+    <script>
+    (function () {
+        var currentFilter = 'all';
+        var tbody = document.getElementById('combined-users-tbody');
+        function recount() {
+            if (!tbody) return;
+            var n = tbody.querySelectorAll('tr.combined-user-row').length;
+            var el = document.getElementById('combined-user-count');
+            if (el) el.textContent = String(n);
+        }
+        function applyFilter() {
+            if (!tbody) return;
+            tbody.querySelectorAll('tr').forEach(function (tr) {
+                var role = tr.getAttribute('data-role');
+                if (role === 'loading' || role === 'empty') {
+                    tr.style.display = (currentFilter === 'all') ? '' : 'none';
+                    return;
+                }
+                if (!tr.hasAttribute('data-source')) {
+                    return;
+                }
+                var src = tr.getAttribute('data-source');
+                if (currentFilter === 'all') {
+                    tr.style.display = '';
+                } else {
+                    tr.style.display = (src === currentFilter) ? '' : 'none';
+                }
+            });
+        }
+        function setActiveTab(activeBtn) {
+            document.querySelectorAll('.combined-tab').forEach(function (b) {
+                var on = b === activeBtn;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+        }
+        document.querySelectorAll('.combined-tab').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                currentFilter = btn.getAttribute('data-filter') || 'all';
+                setActiveTab(btn);
+                recount();
+                applyFilter();
+            });
+        });
+        window.__combinedRefresh = function () {
+            recount();
+            applyFilter();
+        };
+        recount();
+        applyFilter();
+    })();
+    </script>
 
     <?php if (!empty($browser_fetch_jobs)): ?>
     <script type="application/json" id="combined-users-browser-jobs"><?php
@@ -758,14 +1116,18 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
         }
         function appendRow(id, name, email, source) {
             var tr = document.createElement('tr');
+            tr.className = 'combined-user-row';
+            tr.setAttribute('data-source', source);
             tr.innerHTML = '<td>' + esc(id) + '</td><td>' + esc(name) + '</td><td>' + esc(email) + '</td><td class="source">' + esc(source) + '</td>';
             tbody.appendChild(tr);
         }
         function errRow(label, msg) {
             var tr = document.createElement('tr');
             tr.className = 'browser-fetch-err';
+            tr.setAttribute('data-source', label);
             tr.innerHTML = '<td colspan="4">' + esc(label + ': ' + msg) + '</td>';
             tbody.appendChild(tr);
+            if (window.__combinedRefresh) window.__combinedRefresh();
         }
 
         function removeLoadingPlaceholder() {
@@ -816,6 +1178,7 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
                         });
                         if (CU_DEBUG) logWarn(label + ' — OK', url);
                         removeLoadingPlaceholder();
+                        if (window.__combinedRefresh) window.__combinedRefresh();
                     })
                     .catch(function (err) {
                         var nextErr = err || new Error('Unknown fetch error');
@@ -834,5 +1197,9 @@ $combined_users_page_origin = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !==
         <pre><?php echo htmlspecialchars(json_encode($remote_fetch_log, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); ?></pre>
     </div>
     <?php endif; ?>
+
+    </div><?php /* .container */ ?>
+    </main>
+
 </body>
 </html>

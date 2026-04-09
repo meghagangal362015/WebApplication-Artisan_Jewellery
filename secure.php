@@ -57,6 +57,7 @@ $conn->close();
                     <li><a href="products.html">Products & Services</a></li>
                     <li><a href="news.html">News</a></li>
                     <li><a href="contact.php">Contact</a></li>
+                    <li><a href="combined_users.php">Combined Users</a></li>
                     <li><a href="logout.php">Logout</a></li>
                 </ul>
             </nav>
