@@ -18,7 +18,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 // Same source as combined_users.php / get_users.php — live rows from the users table (not a static list)
 require_once __DIR__ . '/db.php';
 $websiteUsers = [];
-$result         = $conn->query('SELECT id, name, email FROM users ORDER BY id ASC');
+$result         = $conn->query("SELECT id, CONCAT(first_name, ' ', last_name) AS name, email FROM users ORDER BY id ASC");
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $websiteUsers[] = $row;
@@ -57,6 +57,7 @@ $conn->close();
                     <li><a href="products.html">Products & Services</a></li>
                     <li><a href="news.html">News</a></li>
                     <li><a href="contact.php">Contact</a></li>
+                    <li><a href="user.php">User</a></li>
                     <li><a href="combined_users.php">Combined Users</a></li>
                     <li><a href="logout.php">Logout</a></li>
                 </ul>

@@ -497,7 +497,7 @@ foreach ($companies as $company) {
                 $source_warnings[] = $label . ': database connection failed — ' . $conn->connect_error;
                 continue;
             }
-            $sql    = 'SELECT id, name, email FROM users';
+            $sql    = "SELECT id, CONCAT(first_name, ' ', last_name) AS name, email FROM users";
             $result = $conn->query($sql);
             if ($result === false) {
                 $source_warnings[] = $label . ': query failed — ' . $conn->error;
@@ -901,6 +901,7 @@ sort($unique_sources, SORT_NATURAL | SORT_FLAG_CASE);
                     <li><a href="products.html">Products & Services</a></li>
                     <li><a href="news.html">News</a></li>
                     <li><a href="contact.php">Contact</a></li>
+                    <li><a href="user.php">User</a></li>
                     <li><a href="combined_users.php" class="active" aria-current="page">Combined Users</a></li>
                     <li><a href="login.php">Login</a></li>
                 </ul>

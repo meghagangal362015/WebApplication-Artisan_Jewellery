@@ -12,7 +12,7 @@ error_reporting(E_ALL);
 require_once 'db.php';
 
 // Fetch all users from the database
-$sql    = "SELECT id, name, email FROM users";
+$sql = "SELECT id, CONCAT(first_name, ' ', last_name) AS name, email, first_name, last_name, home_address, home_phone, cell_phone FROM users ORDER BY id ASC";
 $result = $conn->query($sql);
 
 // Check if query succeeded

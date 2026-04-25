@@ -69,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <li><a href="products.html">Products & Services</a></li>
                     <li><a href="news.html">News</a></li>
                     <li><a href="contact.php">Contact</a></li>
+                    <li><a href="user.php">User</a></li>
                     <li><a href="combined_users.php">Combined Users</a></li>
                     <li><a href="login.php">Login</a></li>
                 </ul>
